@@ -3,6 +3,7 @@ package io.github.duckysmacky.featherchat.client;
 import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) {
@@ -13,10 +14,11 @@ public class Main {
         try (Socket server = new Socket(serverAddress, serverPort)) {
             System.out.printf("Successfully connected to %s%n", server.getRemoteSocketAddress());
 
+            Thread messageReceiver = getMessageReceiverThread(server);
             Thread messageSender = getMessageSenderThread(server);
-            messageSender.join();
 
-            System.out.println("Connection terminated. Exiting...");
+            messageReceiver.join();
+            messageSender.join();
         } catch (UnknownHostException e) {
             System.err.println("Unable to connect to the server: invalid server IP provided");
         } catch (IOException e) {
@@ -24,27 +26,62 @@ public class Main {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+
+        System.out.println("Successfully disconnected from server");
     }
 
     private static Thread getMessageSenderThread(Socket server) throws IOException {
-        BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
+        Scanner console = new Scanner(System.in);
         BufferedWriter serverIn = new BufferedWriter(new OutputStreamWriter(server.getOutputStream()));
 
         Thread thread = new Thread(() -> {
-            String input;
             try {
-                while ((input = console.readLine()) != null) {
-                    serverIn.write(input);
-                    serverIn.newLine();
-                    serverIn.flush();
+                while (!server.isClosed()) {
+                    if (console.hasNextLine()) {
+                        String input = console.nextLine();
 
-                    if (input.equalsIgnoreCase("disconnect")) {
-                        System.out.println("Disconnecting from server...");
-                        break;
+                        if (server.isClosed()) {
+                            System.out.println("Server closed the connection. Disconnecting...");
+                            return;
+                        }
+
+                        serverIn.write(input);
+                        serverIn.newLine();
+                        serverIn.flush();
+
+                        if (input.equalsIgnoreCase("disconnect")) {
+                            System.out.println("Disconnecting from server...");
+                            server.shutdownInput();
+                            return;
+                        }
                     }
                 }
             } catch (IOException e) {
                 System.err.printf("Error reading console input: %s%n", e.getMessage());
+            }
+        });
+
+        thread.start();
+        return thread;
+    }
+
+    private static Thread getMessageReceiverThread(Socket server) throws IOException {
+        BufferedReader serverOut = new BufferedReader(new InputStreamReader(server.getInputStream()));
+
+        Thread thread = new Thread(() -> {
+            try {
+                String message;
+                while (!server.isClosed() && (message = serverOut.readLine()) != null) {
+                    if (message.equalsIgnoreCase("disconnect")) {
+                        System.out.println("Server requested disconnection. Press any key to continue");
+                        server.close();
+                        return;
+                    }
+
+                    System.out.printf("[server] %s%n", message);
+                }
+            } catch (IOException e) {
+                System.err.printf("Error reading server messages: %s%n", e.getMessage());
             }
         });
 
