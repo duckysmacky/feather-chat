@@ -15,22 +15,38 @@ public class Main {
             Socket client = server.accept();
             System.out.printf("Successfully connected to %s%n", client.getRemoteSocketAddress());
 
-            BufferedReader clientOut = new BufferedReader(new InputStreamReader(client.getInputStream()));
-
-            String message;
-            while ((message = clientOut.readLine()) != null) {
-                if (message.equalsIgnoreCase("disconnect")) {
-                    System.out.println("Client requested disconnection. Closing client connection...");
-                    break;
-                }
-
-                System.out.printf("[client] %s%n", message);
-            }
+            Thread messageReceiver = getMessageReceiverThread(client);
+            messageReceiver.join();
 
             client.close();
             System.out.println("Connection terminated. Closing server...");
         } catch (IOException e) {
             System.out.printf("Unable to create server: %s%n", e.getMessage());
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
+    }
+
+    private static Thread getMessageReceiverThread(Socket client) throws IOException {
+        BufferedReader clientOut = new BufferedReader(new InputStreamReader(client.getInputStream()));
+
+        Thread thread = new Thread(() -> {
+            String message;
+            try {
+                while ((message = clientOut.readLine()) != null) {
+                    if (message.equalsIgnoreCase("disconnect")) {
+                        System.out.println("Client requested disconnection. Closing client connection...");
+                        break;
+                    }
+
+                    System.out.printf("[client] %s%n", message);
+                }
+            } catch (IOException e) {
+                System.err.printf("Error reading client messages: %s%n", e.getMessage());
+            }
+        });
+
+        thread.start();
+        return thread;
     }
 }
