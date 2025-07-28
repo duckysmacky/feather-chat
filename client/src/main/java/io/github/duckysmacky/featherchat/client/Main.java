@@ -7,8 +7,14 @@ import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) {
-        String serverAddress = "127.0.0.1";
-        int serverPort = 8080;
+        if (args.length < 2) {
+            System.err.println("Error: not enough arguments provided");
+            System.err.println("Usage: client <host> <port>");
+            return;
+        }
+
+        String serverAddress = args[0];
+        int serverPort = Integer.parseInt(args[1]);
 
         System.out.printf("Trying to connect to %s:%s...%n", serverAddress, serverPort);
         try (Socket server = new Socket(serverAddress, serverPort)) {
