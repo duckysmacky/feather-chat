@@ -78,13 +78,7 @@ public class Main {
             try {
                 String message;
                 while (!server.isClosed() && (message = serverOut.readLine()) != null) {
-                    if (message.equalsIgnoreCase("disconnect")) {
-                        System.out.println("Server requested disconnection. Press any key to continue");
-                        server.close();
-                        return;
-                    }
-
-                    System.out.printf("[server] %s%n", message);
+                    System.out.println(message);
                 }
             } catch (IOException e) {
                 System.err.printf("Error reading server messages: %s%n", e.getMessage());
