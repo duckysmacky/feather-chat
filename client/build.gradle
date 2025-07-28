@@ -3,7 +3,7 @@ plugins {
 }
 
 application {
-    mainClassName = 'io.github.duckysmacky.featherchat.client.Main'
+    mainClassName = 'io.github.duckysmacky.featherchat.client.Client'
 }
 
 dependencies {
