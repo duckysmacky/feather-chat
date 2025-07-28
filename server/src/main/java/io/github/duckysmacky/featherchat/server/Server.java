@@ -10,14 +10,14 @@ import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class ChatServer implements Closeable {
+public class Server implements Closeable {
     private ServerSocket serverSocket;
     private final Thread connectionListener;
     private final Thread consoleListener;
     private final ExecutorService connectionManager;
-    private final Map<String, ChatClient> clients;
+    private final Map<String, ClientConnection> clients;
 
-    public ChatServer() {
+    public Server() {
         this.clients = new HashMap<>();
         this.connectionManager = Executors.newSingleThreadExecutor();
 
@@ -55,19 +55,33 @@ public class ChatServer implements Closeable {
                 }
             }
         });
+    }
 
+    public static void main(String[] args) {
+        Server server = new Server();
+
+        try {
+            server.start(8080);
+        } catch (IOException e) {
+            System.err.printf("Unable to start a server: %s%n", e.getMessage());
+            throw new RuntimeException();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+        server.close();
     }
 
     private void connectClient(Socket clientSocket) {
         connectionManager.submit(() -> {
-            ChatClient client = new ChatClient(clientSocket, this::handleMessage);
+            ClientConnection client = new ClientConnection(clientSocket, this::handleMessage);
             clients.put(client.getId(), client);
 
             System.out.printf("New client connected: %s%n", client.getId());
         });
     }
 
-    private void disconnectClient(ChatClient client) {
+    private void disconnectClient(ClientConnection client) {
         connectionManager.submit(() -> {
             System.out.printf("Disconnecting from client '%s'...%n", client.getId());
 
@@ -78,7 +92,7 @@ public class ChatServer implements Closeable {
         });
     }
 
-    private void handleMessage(ChatClient sender, String message) {
+    private void handleMessage(ClientConnection sender, String message) {
         if (message.equalsIgnoreCase("disconnect")) {
             System.out.printf("Client '%s' requested disconnection%n", sender.getId());
             disconnectClient(sender);
@@ -99,15 +113,10 @@ public class ChatServer implements Closeable {
         System.out.printf("[%s] %s%n", sender.getId(), message);
     }
 
-    public void start(int port) throws InterruptedException {
+    public void start(int port) throws IOException, InterruptedException {
         System.out.println("Starting the server...");
 
-        try {
-            this.serverSocket = new ServerSocket(port);
-        } catch (IOException e) {
-            System.err.printf("Unable to start a server: %s%n", e.getMessage());
-            throw new RuntimeException();
-        }
+        this.serverSocket = new ServerSocket(port);
 
         this.connectionListener.start();
         this.consoleListener.start();
@@ -135,7 +144,7 @@ public class ChatServer implements Closeable {
             throw new RuntimeException(e);
         }
 
-        clients.values().forEach(ChatClient::close);
+        clients.values().forEach(ClientConnection::close);
         clients.clear();
 
         System.out.println("Server successfully closed");

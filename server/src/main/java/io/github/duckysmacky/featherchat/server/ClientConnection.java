@@ -3,16 +3,15 @@ package io.github.duckysmacky.featherchat.server;
 import java.io.*;
 import java.net.Socket;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
-public class ChatClient implements Closeable {
+public class ClientConnection implements Closeable {
     private Socket socket;
     private BufferedWriter clientIn;
     private BufferedReader clientOut;
     private String id;
     private Thread messageListener;
 
-    public ChatClient(Socket clientSocket, BiConsumer<ChatClient, String> onMessage) {
+    public ClientConnection(Socket clientSocket, BiConsumer<ClientConnection, String> onMessage) {
         this.socket = clientSocket;
         this.id = String.valueOf(clientSocket.getPort());
 
