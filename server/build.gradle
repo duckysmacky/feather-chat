@@ -1,3 +1,11 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClassName = 'io.github.duckysmacky.featherchat.server.Main'
+}
+
 dependencies {
     implementation project(':common')
 }
