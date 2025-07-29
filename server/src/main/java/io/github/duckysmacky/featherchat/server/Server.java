@@ -10,16 +10,17 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server implements Closeable {
-    private final static String SERVER_ID = "SERVER";
+    private final static UUID SERVER_ID = new UUID(0, 0);
     private ServerSocket serverSocket;
     private final Thread connectionListener;
     private final Thread consoleListener;
     private final ExecutorService connectionManager;
-    private final Map<String, ClientConnection> clients;
+    private final Map<UUID, ClientConnection> clients;
 
     public Server() {
         this.clients = new HashMap<>();
@@ -50,8 +51,7 @@ public class Server implements Closeable {
                     if (serverSocket.isClosed()) return;
                     if (input == null || input.isBlank()) continue;
 
-                    Message message = new Message(SERVER_ID, input);
-                    handleMessage(message);
+                    handleMessage(Message.textMessage(SERVER_ID, input));
                 }
             }
         });
@@ -74,10 +74,14 @@ public class Server implements Closeable {
 
     private void connectClient(Socket clientSocket) {
         connectionManager.submit(() -> {
-            ClientConnection client = new ClientConnection(clientSocket, this::handleMessage);
-            clients.put(client.getId(), client);
+            try {
+                ClientConnection client = new ClientConnection(clientSocket, this::handleMessage);
 
-            System.out.printf("New client connected: %s%n", client.getId());
+                clients.put(client.getId(), client);
+                System.out.printf("New client connected: %s%n", client.getId());
+            } catch (IOException e) {
+                System.err.printf("Unable to properly connect the client: %s%n", e.getMessage());
+            }
         });
     }
 

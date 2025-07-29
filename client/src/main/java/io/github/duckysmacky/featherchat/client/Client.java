@@ -5,13 +5,16 @@ import io.github.duckysmacky.featherchat.common.MessageType;
 
 import java.io.IOException;
 import java.util.Scanner;
+import java.util.UUID;
 
 public class Client {
     private ServerConnection server;
     private final Thread consoleListener;
+    private final UUID id;
     private boolean isConnected;
 
     public Client() {
+        this.id = UUID.randomUUID();
         this.isConnected = false;
 
         this.consoleListener = new Thread(() -> {
@@ -52,7 +55,11 @@ public class Client {
     }
 
     private void handleInput(String input) {
-        Message message = new Message(String.valueOf(server.getLocalPort()), input);
+        Message message;
+        if (input.equalsIgnoreCase("disconnect"))
+            message = Message.disconnectMessage(id);
+        else
+            message = Message.textMessage(id, input);
 
         try {
             server.sendMessage(message);
@@ -67,14 +74,22 @@ public class Client {
             System.out.println(message);
     }
 
+    private void handleMessage(Message message) {
+        if (message.getType() == MessageType.TEXT)
+            System.out.println(message);
+    }
+
     public void connect(String host, int port) throws IOException, InterruptedException {
         System.out.printf("Connecting to %s:%s...%n", host, port);
-        this.server = new ServerConnection(host, port, System.out::println);
+        this.server = new ServerConnection(host, port, this::handleMessage);
+
+        Message connectionMessage = Message.connectMessage(id);
+        server.sendMessage(connectionMessage);
 
         this.isConnected = true;
         this.consoleListener.start();
 
-        System.out.printf("Successfully connected to %s:%s%n", host, port);
+        System.out.printf("Successfully connected to %s:%s with ID '%s'%n", host, port, id);
 
         this.consoleListener.join();
     }

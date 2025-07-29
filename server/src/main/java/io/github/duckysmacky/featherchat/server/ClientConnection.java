@@ -1,28 +1,50 @@
 package io.github.duckysmacky.featherchat.server;
 
 import io.github.duckysmacky.featherchat.common.Message;
+import io.github.duckysmacky.featherchat.common.MessageType;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 public class ClientConnection implements Closeable {
-    private Socket socket;
-    private DataInputStream clientOut;
-    private DataOutputStream clientIn;
-    private String id;
-    private Thread messageListener;
+    private final Socket socket;
+    private final DataInputStream clientOut;
+    private final DataOutputStream clientIn;
+    private final UUID id;
+    private final Thread messageListener;
 
-    public ClientConnection(Socket clientSocket, Consumer<Message> onMessage) {
+    public ClientConnection(Socket clientSocket, Consumer<Message> onMessage) throws IOException {
         this.socket = clientSocket;
-        this.id = String.valueOf(clientSocket.getPort());
 
         try {
             this.clientOut = new DataInputStream(socket.getInputStream());
             this.clientIn = new DataOutputStream(socket.getOutputStream());
         } catch (IOException e) {
-            System.err.printf("Unable to get stream for client '%s': %s%n", id, e.getMessage());
-            throw new RuntimeException();
+            System.err.printf("Unable to get stream for client: %s%n", e.getMessage());
+            throw e;
+        }
+
+        // wait for the CONNECT message from client to get the ID
+        try {
+            while (true) {
+                int payloadLength = clientOut.readInt();
+                byte[] payload = clientOut.readNBytes(payloadLength);
+                Message message = Message.fromPayload(payload);
+
+                if (message.getType() == MessageType.CONNECT) {
+                    this.id = message.getSenderId();
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            String msg = e.getMessage();
+
+            if (msg != null && msg.equals("Socket closed")) {
+                throw new IOException("Client disconnected before sending the CONNECT message");
+            }
+            throw e;
         }
 
         this.messageListener = new Thread(() -> {
@@ -55,7 +77,7 @@ public class ClientConnection implements Closeable {
         clientIn.flush();
     }
 
-    public String getId() {
+    public UUID getId() {
         return id;
     }
 
