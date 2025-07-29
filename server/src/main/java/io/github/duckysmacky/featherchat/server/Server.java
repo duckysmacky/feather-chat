@@ -1,5 +1,8 @@
 package io.github.duckysmacky.featherchat.server;
 
+import io.github.duckysmacky.featherchat.common.Message;
+import io.github.duckysmacky.featherchat.common.MessageType;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -11,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server implements Closeable {
+    private final static String SERVER_ID = "SERVER";
     private ServerSocket serverSocket;
     private final Thread connectionListener;
     private final Thread consoleListener;
@@ -42,16 +46,12 @@ public class Server implements Closeable {
             while (!serverSocket.isClosed()) {
                 if (console.hasNextLine()) {
                     String input = console.nextLine();
-                    if (serverSocket.isClosed()) return;
 
-                    clients.values().forEach(client -> {
-                        try {
-                            client.send("server", input);
-                        } catch (IOException e) {
-                            System.err.printf("Unable to send a message to client '%s': %s%n", client.getId(), e.getMessage());
-                            disconnectClient(client);
-                        }
-                    });
+                    if (serverSocket.isClosed()) return;
+                    if (input == null || input.isBlank()) continue;
+
+                    Message message = new Message(SERVER_ID, input);
+                    handleMessage(message);
                 }
             }
         });
@@ -92,17 +92,21 @@ public class Server implements Closeable {
         });
     }
 
-    private void handleMessage(ClientConnection sender, String message) {
-        if (message.equalsIgnoreCase("disconnect")) {
-            System.out.printf("Client '%s' requested disconnection%n", sender.getId());
-            disconnectClient(sender);
+    private void handleMessage(Message message) {
+        if (message.getType() == MessageType.DISCONNECT && !message.getSenderId().equals(SERVER_ID)) {
+            System.out.printf("Client '%s' requested disconnection%n", message.getSenderId());
+
+            ClientConnection client = clients.get(message.getSenderId());
+            if (client != null)
+                disconnectClient(client);
+
             return;
         }
 
         clients.values().forEach(client -> {
-            if (!client.getId().equals(sender.getId())) {
+            if (!client.getId().equals(message.getSenderId())) {
                 try {
-                    client.send(sender.getId(), message);
+                    client.sendMessage(message);
                 } catch (IOException e) {
                     System.err.printf("Unable to send a message to client '%s': %s%n", client.getId(), e.getMessage());
                     disconnectClient(client);
@@ -110,7 +114,7 @@ public class Server implements Closeable {
             }
         });
 
-        System.out.printf("[%s] %s%n", sender.getId(), message);
+        System.out.println(message);
     }
 
     public void start(int port) throws IOException, InterruptedException {

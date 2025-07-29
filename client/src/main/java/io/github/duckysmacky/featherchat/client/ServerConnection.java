@@ -1,21 +1,25 @@
 package io.github.duckysmacky.featherchat.client;
 
+import io.github.duckysmacky.featherchat.common.Message;
+
 import java.io.*;
 import java.net.Socket;
 import java.util.function.Consumer;
 
 public class ServerConnection implements Closeable {
     private final Socket socket;
-    private final BufferedReader serverOut;
-    private final BufferedWriter serverIn;
+    private final int localPort;
+    private final DataInputStream serverOut;
+    private final DataOutputStream serverIn;
     private final Thread messageListener;
 
-    public ServerConnection(String host, int port, Consumer<String> onMessage) throws IOException {
+    public ServerConnection(String host, int port, Consumer<Message> onMessage) throws IOException {
         this.socket = new Socket(host, port);
+        this.localPort = socket.getLocalPort();
 
         try {
-            this.serverOut = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            this.serverIn = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+            this.serverOut = new DataInputStream(socket.getInputStream());
+            this.serverIn = new DataOutputStream(socket.getOutputStream());
         } catch (IOException e) {
             System.err.printf("Unable to get server's streams: %s%n", e.getMessage());
             throw new RuntimeException(e);
@@ -23,8 +27,10 @@ public class ServerConnection implements Closeable {
 
         this.messageListener = new Thread(() -> {
             try {
-                String message;
-                while (!socket.isClosed() && (message = serverOut.readLine()) != null) {
+                while (!socket.isClosed()) {
+                    int payloadLength = serverOut.readInt();
+                    byte[] payload = serverOut.readNBytes(payloadLength);
+                    Message message = Message.fromPayload(payload);
                     onMessage.accept(message);
                 }
             } catch (IOException e) {
@@ -36,10 +42,16 @@ public class ServerConnection implements Closeable {
         this.messageListener.start();
     }
 
-    public void send(String message) throws IOException {
-        serverIn.write(message);
-        serverIn.newLine();
+    public void sendMessage(Message message) throws IOException {
+        byte[] payload = message.intoPayload();
+
+        serverIn.writeInt(payload.length);
+        serverIn.write(payload);
         serverIn.flush();
+    }
+
+    public int getLocalPort() {
+        return localPort;
     }
 
     @Override

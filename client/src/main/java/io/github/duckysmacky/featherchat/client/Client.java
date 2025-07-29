@@ -1,5 +1,8 @@
 package io.github.duckysmacky.featherchat.client;
 
+import io.github.duckysmacky.featherchat.common.Message;
+import io.github.duckysmacky.featherchat.common.MessageType;
+
 import java.io.IOException;
 import java.util.Scanner;
 
@@ -17,9 +20,11 @@ public class Client {
             while (isConnected) {
                 if (console.hasNextLine()) {
                     String input = console.nextLine();
-                    if (!isConnected) return;
 
-                    sendMessage(input);
+                    if (!isConnected) return;
+                    if (input == null || input.isBlank()) continue;
+
+                    handleInput(input);
                 }
             }
         });
@@ -46,15 +51,20 @@ public class Client {
         }
     }
 
-    private void sendMessage(String message) {
+    private void handleInput(String input) {
+        Message message = new Message(String.valueOf(server.getLocalPort()), input);
+
         try {
-            server.send(message);
+            server.sendMessage(message);
         } catch (IOException e) {
             System.err.printf("Unable to send a message to server: %s%n", e.getMessage());
         }
 
-        if (message.equalsIgnoreCase("disconnect"))
+
+        if (message.getType() == MessageType.DISCONNECT)
             disconnect();
+        else
+            System.out.println(message);
     }
 
     public void connect(String host, int port) throws IOException, InterruptedException {
