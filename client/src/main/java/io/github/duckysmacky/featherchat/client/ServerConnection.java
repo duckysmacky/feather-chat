@@ -4,6 +4,7 @@ import io.github.duckysmacky.featherchat.common.Message;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.concurrent.BlockingQueue;
 import java.util.function.Consumer;
 
 public class ServerConnection implements Closeable {
@@ -13,7 +14,7 @@ public class ServerConnection implements Closeable {
     private final DataOutputStream serverIn;
     private final Thread messageListener;
 
-    public ServerConnection(String host, int port, Consumer<Message> onMessage) throws IOException {
+    public ServerConnection(String host, int port, BlockingQueue<Message> messagePool) throws IOException {
         this.socket = new Socket(host, port);
         this.localPort = socket.getLocalPort();
 
@@ -30,8 +31,7 @@ public class ServerConnection implements Closeable {
                 while (!socket.isClosed()) {
                     int payloadLength = serverOut.readInt();
                     byte[] payload = serverOut.readNBytes(payloadLength);
-                    Message message = Message.fromPayload(payload);
-                    onMessage.accept(message);
+                    messagePool.add(Message.fromPayload(payload));
                 }
             } catch (IOException e) {
                 if (e.getMessage().equals("Socket closed")) return;
