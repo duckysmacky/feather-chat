@@ -5,41 +5,33 @@ import io.github.duckysmacky.featherchat.common.Message;
 import java.io.*;
 import java.net.Socket;
 import java.util.concurrent.BlockingQueue;
-import java.util.function.Consumer;
 
 public class ServerConnection implements Closeable {
     private final Socket socket;
-    private final int localPort;
     private final DataInputStream serverOut;
     private final DataOutputStream serverIn;
-    private final Thread messageListener;
+    private final Thread incomingMessageListener;
 
-    public ServerConnection(String host, int port, BlockingQueue<Message> messagePool) throws IOException {
+    public ServerConnection(String host, int port, BlockingQueue<Message> incomingMessagePool) throws IOException {
         this.socket = new Socket(host, port);
-        this.localPort = socket.getLocalPort();
+        this.serverOut = new DataInputStream(socket.getInputStream());
+        this.serverIn = new DataOutputStream(socket.getOutputStream());
 
-        try {
-            this.serverOut = new DataInputStream(socket.getInputStream());
-            this.serverIn = new DataOutputStream(socket.getOutputStream());
-        } catch (IOException e) {
-            System.err.printf("Unable to get server's streams: %s%n", e.getMessage());
-            throw new RuntimeException(e);
-        }
-
-        this.messageListener = new Thread(() -> {
-            try {
-                while (!socket.isClosed()) {
+        this.incomingMessageListener = new Thread(() -> {
+            while (!socket.isClosed()) {
+                try {
                     int payloadLength = serverOut.readInt();
                     byte[] payload = serverOut.readNBytes(payloadLength);
-                    messagePool.add(Message.fromPayload(payload));
+                    incomingMessagePool.add(Message.fromPayload(payload));
+                } catch (IOException e) {
+                    if (e.getMessage().strip().equalsIgnoreCase("socket closed")) break;
+
+                    System.err.printf("Unable to read a message from server: %s%n", e.getMessage());
                 }
-            } catch (IOException e) {
-                if (e.getMessage().equals("Socket closed")) return;
-                System.err.printf("Unable to read server messages: %s%n", e.getMessage());
             }
         });
 
-        this.messageListener.start();
+        this.incomingMessageListener.start();
     }
 
     public void sendMessage(Message message) throws IOException {
@@ -50,17 +42,14 @@ public class ServerConnection implements Closeable {
         serverIn.flush();
     }
 
-    public int getLocalPort() {
-        return localPort;
-    }
-
     @Override
     public void close() {
         try {
             this.socket.shutdownInput();
             this.socket.close();
 
-            this.messageListener.join();
+            this.incomingMessageListener.interrupt();
+            this.incomingMessageListener.join();
         } catch (IOException e) {
             System.err.printf("Unable to close server socket: %s%n", e.getMessage());
         } catch (InterruptedException e) {
