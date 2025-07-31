@@ -24,9 +24,12 @@ public class ServerConnection implements Closeable {
                     byte[] payload = serverOut.readNBytes(payloadLength);
                     incomingMessagePool.add(Message.fromPayload(payload));
                 } catch (IOException e) {
-                    if (e.getMessage().strip().equalsIgnoreCase("socket closed")) break;
+                    String msg = e.getMessage();
+                    if (msg != null) {
+                        if (msg.strip().equalsIgnoreCase("socket closed")) break;
 
-                    System.err.printf("Unable to read a message from server: %s%n", e.getMessage());
+                        System.err.printf("Unable to read a message from server: %s%n", msg);
+                    }
                 }
             }
         });

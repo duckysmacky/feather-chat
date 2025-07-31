@@ -21,6 +21,8 @@ public class Client {
 
     public Client() {
         this.id = UUID.randomUUID();
+        this.messageHandler = Executors.newSingleThreadExecutor();
+        this.isConnected = false;
 
         this.consoleInputListener = new Thread(() -> {
             Scanner console = new Scanner(System.in);
@@ -61,9 +63,6 @@ public class Client {
                 }
             }
         });
-
-        this.messageHandler = Executors.newSingleThreadExecutor();
-        this.isConnected = false;
     }
 
     public static void main(String[] args) {
@@ -122,7 +121,7 @@ public class Client {
         System.out.printf("Connecting to %s:%s...%n", host, port);
 
         this.incomingMessagePool = new LinkedBlockingQueue<>();
-        this.outgoingMessagePool = new SynchronousQueue<>();
+        this.outgoingMessagePool = new LinkedBlockingQueue<>();
         this.server = new ServerConnection(host, port, incomingMessagePool);
 
         Message connectionMessage = Message.connectMessage(id);
