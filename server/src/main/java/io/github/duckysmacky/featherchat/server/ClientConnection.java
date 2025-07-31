@@ -6,7 +6,7 @@ import io.github.duckysmacky.featherchat.common.MessageType;
 import java.io.*;
 import java.net.Socket;
 import java.util.UUID;
-import java.util.function.Consumer;
+import java.util.concurrent.BlockingQueue;
 
 public class ClientConnection implements Closeable {
     private final Socket socket;
@@ -15,7 +15,7 @@ public class ClientConnection implements Closeable {
     private final UUID id;
     private final Thread messageListener;
 
-    public ClientConnection(Socket clientSocket, Consumer<Message> onMessage) throws IOException {
+    public ClientConnection(Socket clientSocket, BlockingQueue<Message> messagePool) throws IOException {
         this.socket = clientSocket;
 
         try {
@@ -48,20 +48,18 @@ public class ClientConnection implements Closeable {
         }
 
         this.messageListener = new Thread(() -> {
-            try {
-                while (!socket.isClosed()) {
+            while (!socket.isClosed()) {
+                try {
                     int payloadLength = clientOut.readInt();
                     byte[] payload = clientOut.readNBytes(payloadLength);
-                    Message message = Message.fromPayload(payload);
+                    messagePool.add(Message.fromPayload(payload));
+                } catch (IOException e) {
+                    String msg = e.getMessage();
+                    if (msg != null) {
+                        if (msg.strip().equalsIgnoreCase("socket closed")) break;
 
-                    onMessage.accept(message);
-                }
-            } catch (IOException e) {
-                String msg = e.getMessage();
-                if (msg != null) {
-                    if (msg.equals("Socket closed")) return;
-
-                    System.err.printf("Unable to read client '%s' messages: %s%n", id, e.getMessage());
+                        System.err.printf("Unable to read a message from client: %s%n", msg);
+                    }
                 }
             }
         });
@@ -86,10 +84,13 @@ public class ClientConnection implements Closeable {
         try {
             this.socket.shutdownInput();
             this.socket.close();
-
-            this.messageListener.join();
         } catch (IOException e) {
             System.err.printf("Unable to close client '%s' socket: %s%n", id, e.getMessage());
+        }
+
+        try {
+            this.messageListener.interrupt();
+            this.messageListener.join();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }

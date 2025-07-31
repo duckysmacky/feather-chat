@@ -3,7 +3,6 @@ package io.github.duckysmacky.featherchat.server;
 import io.github.duckysmacky.featherchat.common.Message;
 import io.github.duckysmacky.featherchat.common.MessageType;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -11,20 +10,55 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
-public class Server implements Closeable {
+public class Server {
     private final static UUID SERVER_ID = new UUID(0, 0);
-    private ServerSocket serverSocket;
+    private final Thread consoleInputListener;
+    private final Thread messagePoolListener;
     private final Thread connectionListener;
-    private final Thread consoleListener;
     private final ExecutorService connectionManager;
+    private final ExecutorService messageManager;
+    private final BlockingQueue<Message> messagePool;
     private final Map<UUID, ClientConnection> clients;
+    private ServerSocket serverSocket;
 
     public Server() {
-        this.clients = new HashMap<>();
         this.connectionManager = Executors.newSingleThreadExecutor();
+        this.messageManager = Executors.newFixedThreadPool(10);
+        this.messagePool = new LinkedBlockingQueue<>();
+        this.clients = new HashMap<>();
+
+        this.consoleInputListener = new Thread(() -> {
+            Scanner console = new Scanner(System.in);
+
+            while (!serverSocket.isClosed()) {
+                if (console.hasNextLine()) {
+                    String input = console.nextLine();
+                    if (serverSocket.isClosed()) return;
+
+                    if (input != null && !input.isBlank())
+                        messagePool.add(Message.textMessage(SERVER_ID, input));
+                } else {
+                    connectionManager.submit(this::stop);
+                    break;
+                }
+            }
+        });
+
+        this.messagePoolListener = new Thread(() -> {
+            while (!serverSocket.isClosed()) {
+                try {
+                    Message message = messagePool.take();
+                    handleMessage(message);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        });
 
         this.connectionListener = new Thread(() -> {
             System.out.printf("Server is now listening on port %s%n", serverSocket.getLocalPort());
@@ -40,21 +74,6 @@ public class Server implements Closeable {
                 }
             }
         });
-
-        this.consoleListener = new Thread(() -> {
-            Scanner console = new Scanner(System.in);
-
-            while (!serverSocket.isClosed()) {
-                if (console.hasNextLine()) {
-                    String input = console.nextLine();
-
-                    if (serverSocket.isClosed()) return;
-                    if (input == null || input.isBlank()) continue;
-
-                    handleMessage(Message.textMessage(SERVER_ID, input));
-                }
-            }
-        });
     }
 
     public static void main(String[] args) {
@@ -64,35 +83,31 @@ public class Server implements Closeable {
             server.start(8080);
         } catch (IOException e) {
             System.err.printf("Unable to start a server: %s%n", e.getMessage());
-            throw new RuntimeException();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
         }
-
-        server.close();
     }
 
     private void connectClient(Socket clientSocket) {
         connectionManager.submit(() -> {
             try {
-                ClientConnection client = new ClientConnection(clientSocket, this::handleMessage);
+                ClientConnection client = new ClientConnection(clientSocket, messagePool);
 
                 clients.put(client.getId(), client);
                 System.out.printf("New client connected: %s%n", client.getId());
             } catch (IOException e) {
-                System.err.printf("Unable to properly connect the client: %s%n", e.getMessage());
+                System.err.printf("Unable to connect the client: %s%n", e.getMessage());
             }
         });
     }
 
     private void disconnectClient(ClientConnection client) {
         connectionManager.submit(() -> {
-            System.out.printf("Disconnecting from client '%s'...%n", client.getId());
+            ClientConnection disconnectedClient = clients.remove(client.getId());
 
-            clients.remove(client.getId());
-            client.close();
-
-            System.out.printf("Successfully disconnected from client '%s'%n", client.getId());
+            if (disconnectedClient != null) {
+                System.out.printf("Disconnecting from client '%s'...%n", disconnectedClient.getId());
+                disconnectedClient.close();
+                System.out.printf("Successfully disconnected from client '%s'%n", disconnectedClient.getId());
+            }
         });
     }
 
@@ -107,7 +122,7 @@ public class Server implements Closeable {
             return;
         }
 
-        clients.values().forEach(client -> {
+        clients.values().forEach(client -> messageManager.submit(() -> {
             if (!client.getId().equals(message.getSenderId())) {
                 try {
                     client.sendMessage(message);
@@ -116,28 +131,25 @@ public class Server implements Closeable {
                     disconnectClient(client);
                 }
             }
-        });
+        }));
 
         System.out.println(message);
     }
 
-    public void start(int port) throws IOException, InterruptedException {
+    public void start(int port) throws IOException {
         System.out.println("Starting the server...");
 
         this.serverSocket = new ServerSocket(port);
 
+        this.consoleInputListener.start();
+        this.messagePoolListener.start();
         this.connectionListener.start();
-        this.consoleListener.start();
 
         System.out.println("Successfully started the server");
-
-        this.connectionListener.join();
-        this.consoleListener.join();
     }
 
-    @Override
-    public void close() {
-        System.out.println("Closing the server...");
+    public void stop() {
+        System.out.println("Stopping the server...");
 
         try {
             this.serverSocket.close();
@@ -145,16 +157,23 @@ public class Server implements Closeable {
             throw new RuntimeException(e);
         }
 
+        this.messagePoolListener.interrupt();
+        this.connectionListener.interrupt();
+
         try {
+            this.consoleInputListener.join();
+            this.messagePoolListener.join();
             this.connectionListener.join();
-            this.consoleListener.join();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
 
-        clients.values().forEach(ClientConnection::close);
-        clients.clear();
+        this.clients.values().forEach(this::disconnectClient);
+        this.clients.clear();
 
-        System.out.println("Server successfully closed");
+        this.connectionManager.shutdown();
+        this.messageManager.shutdown();
+
+        System.out.println("Server successfully stopped");
     }
 }
