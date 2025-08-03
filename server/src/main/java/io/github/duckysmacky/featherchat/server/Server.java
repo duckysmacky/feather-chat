@@ -1,6 +1,7 @@
 package io.github.duckysmacky.featherchat.server;
 
 import io.github.duckysmacky.featherchat.common.Message;
+import io.github.duckysmacky.featherchat.common.MessageListener;
 import io.github.duckysmacky.featherchat.common.MessageType;
 
 import java.io.IOException;
@@ -17,20 +18,20 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class Server {
     private final static UUID SERVER_ID = new UUID(0, 0);
+    private final Map<UUID, ClientConnection> clients;
+    private final BlockingQueue<Message> messagePool;
+    private final ExecutorService connectionManager;
+    private final ExecutorService messageManager;
     private final Thread consoleInputListener;
     private final Thread messagePoolListener;
     private final Thread connectionListener;
-    private final ExecutorService connectionManager;
-    private final ExecutorService messageManager;
-    private final BlockingQueue<Message> messagePool;
-    private final Map<UUID, ClientConnection> clients;
     private ServerSocket serverSocket;
 
     public Server() {
+        this.clients = new HashMap<>();
+        this.messagePool = new LinkedBlockingQueue<>();
         this.connectionManager = Executors.newSingleThreadExecutor();
         this.messageManager = Executors.newFixedThreadPool(10);
-        this.messagePool = new LinkedBlockingQueue<>();
-        this.clients = new HashMap<>();
 
         this.consoleInputListener = new Thread(() -> {
             Scanner console = new Scanner(System.in);
@@ -49,16 +50,7 @@ public class Server {
             }
         });
 
-        this.messagePoolListener = new Thread(() -> {
-            while (!serverSocket.isClosed()) {
-                try {
-                    Message message = messagePool.take();
-                    handleMessage(message);
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-        });
+        this.messagePoolListener = new Thread(new MessageListener(() -> !serverSocket.isClosed(), messagePool, this::handleMessage));
 
         this.connectionListener = new Thread(() -> {
             System.out.printf("Server is now listening on port %s%n", serverSocket.getLocalPort());
