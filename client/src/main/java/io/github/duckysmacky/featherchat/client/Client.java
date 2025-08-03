@@ -1,11 +1,11 @@
 package io.github.duckysmacky.featherchat.client;
 
+import io.github.duckysmacky.featherchat.common.ConsoleInputListener;
 import io.github.duckysmacky.featherchat.common.Message;
 import io.github.duckysmacky.featherchat.common.MessageListener;
 import io.github.duckysmacky.featherchat.common.MessageType;
 
 import java.io.IOException;
-import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,23 +28,11 @@ public class Client {
         this.messageHandler = Executors.newSingleThreadExecutor();
         this.isConnected = new AtomicBoolean();
 
-        this.consoleInputListener = new Thread(() -> {
-            Scanner console = new Scanner(System.in);
-
-            while (isConnected.get()) {
-                if (console.hasNextLine()) {
-                    String input = console.nextLine();
-                    if (!isConnected.get()) break;
-
-                    if (input != null && !input.isBlank()) {
-                        Message message = parseInput(input);
-                        outgoingMessagePool.add(message);
-
-                        if (message.getType() == MessageType.DISCONNECT) break;
-                    }
-                }
-            }
-        });
+        this.consoleInputListener = new Thread(new ConsoleInputListener(
+            isConnected::get,
+            input -> outgoingMessagePool.add(Message.textMessage(id, input)),
+            () -> new Thread(this::disconnect).start()
+        ));
 
         this.incomingMessageListener = new Thread(new MessageListener(isConnected::get, incomingMessagePool, this::handleIncomingMessage));
         this.outgoingMessageListener = new Thread(new MessageListener(isConnected::get, outgoingMessagePool, this::handleOutgoingMessage));
@@ -69,13 +57,6 @@ public class Client {
         }
     }
 
-    private Message parseInput(String input) {
-        if (input.equalsIgnoreCase("disconnect"))
-            return Message.disconnectMessage(id);
-
-        return Message.textMessage(id, input);
-    }
-
     private void handleIncomingMessage(Message message) {
         messageHandler.submit(() -> {
             if (message.getType() == MessageType.TEXT)
@@ -86,11 +67,6 @@ public class Client {
     private void handleOutgoingMessage(Message message) {
         messageHandler.submit(() -> {
             if (!isConnected.get()) return;
-
-            if (message.getType() == MessageType.DISCONNECT) {
-                disconnect();
-                return;
-            }
 
             try {
                 server.sendMessage(message);
@@ -116,6 +92,7 @@ public class Client {
         this.outgoingMessageListener.start();
 
         System.out.printf("Successfully connected to %s:%s with ID '%s'%n", host, port, id);
+        System.out.println("Press CTRL + D to disconnect");
     }
 
     public void disconnect() {

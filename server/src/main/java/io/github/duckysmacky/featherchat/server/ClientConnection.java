@@ -58,11 +58,11 @@ public class ClientConnection implements Closeable {
                     if (msg != null) {
                         if (msg.strip().equalsIgnoreCase("socket closed")) break;
 
-                        System.err.printf("Unable to read a message from client: %s%n", msg);
+                        System.err.printf("Unable to read a message from client '%s': %s%n", id, msg);
                     }
                 }
             }
-        });
+        }, String.format("Client '%s' Message Listener", id));
 
         this.messageListener.start();
     }

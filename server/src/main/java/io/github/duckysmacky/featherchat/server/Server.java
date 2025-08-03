@@ -1,5 +1,6 @@
 package io.github.duckysmacky.featherchat.server;
 
+import io.github.duckysmacky.featherchat.common.ConsoleInputListener;
 import io.github.duckysmacky.featherchat.common.Message;
 import io.github.duckysmacky.featherchat.common.MessageListener;
 import io.github.duckysmacky.featherchat.common.MessageType;
@@ -8,13 +9,14 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Server {
     private final static UUID SERVER_ID = new UUID(0, 0);
@@ -22,50 +24,45 @@ public class Server {
     private final BlockingQueue<Message> messagePool;
     private final ExecutorService connectionManager;
     private final ExecutorService messageManager;
+    private final AtomicBoolean isRunning;
     private final Thread consoleInputListener;
     private final Thread messagePoolListener;
     private final Thread connectionListener;
     private ServerSocket serverSocket;
 
     public Server() {
-        this.clients = new HashMap<>();
+        this.clients = new Hashtable<>();
         this.messagePool = new LinkedBlockingQueue<>();
         this.connectionManager = Executors.newSingleThreadExecutor();
         this.messageManager = Executors.newFixedThreadPool(10);
+        this.isRunning = new AtomicBoolean();
 
-        this.consoleInputListener = new Thread(() -> {
-            Scanner console = new Scanner(System.in);
+        this.consoleInputListener = new Thread(new ConsoleInputListener(
+            isRunning::get,
+            input -> messagePool.add(Message.textMessage(SERVER_ID, input)),
+            () -> new Thread(this::stop, "Server Stopper").start()
+        ), "Console Input Listener");
 
-            while (!serverSocket.isClosed()) {
-                if (console.hasNextLine()) {
-                    String input = console.nextLine();
-                    if (serverSocket.isClosed()) return;
-
-                    if (input != null && !input.isBlank())
-                        messagePool.add(Message.textMessage(SERVER_ID, input));
-                } else {
-                    connectionManager.submit(this::stop);
-                    break;
-                }
-            }
-        });
-
-        this.messagePoolListener = new Thread(new MessageListener(() -> !serverSocket.isClosed(), messagePool, this::handleMessage));
+        this.messagePoolListener = new Thread(new MessageListener(isRunning::get, messagePool, this::handleMessage), "Message Pool Listener");
 
         this.connectionListener = new Thread(() -> {
             System.out.printf("Server is now listening on port %s%n", serverSocket.getLocalPort());
 
-            while (!serverSocket.isClosed()) {
+            while (isRunning.get()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
-                    if (serverSocket.isClosed()) return;
+                    if (!isRunning.get()) return;
 
                     connectClient(clientSocket);
                 } catch (IOException e) {
-                    System.err.printf("Unable to accept client connection: %s%n", e.getMessage());
+                    String msg = e.getMessage();
+
+                    if (msg != null && !msg.equals("Socket closed")) {
+                        System.err.printf("Unable to accept client connection: %s%n", e.getMessage());
+                    }
                 }
             }
-        });
+        }, "Connection Listener");
     }
 
     public static void main(String[] args) {
@@ -133,11 +130,13 @@ public class Server {
 
         this.serverSocket = new ServerSocket(port);
 
+        this.isRunning.set(true);
         this.consoleInputListener.start();
         this.messagePoolListener.start();
         this.connectionListener.start();
 
         System.out.println("Successfully started the server");
+        System.out.println("Press CTRL + D to stop");
     }
 
     public void stop() {
@@ -149,6 +148,7 @@ public class Server {
             throw new RuntimeException(e);
         }
 
+        this.isRunning.set(false);
         this.messagePoolListener.interrupt();
         this.connectionListener.interrupt();
 
@@ -161,7 +161,6 @@ public class Server {
         }
 
         this.clients.values().forEach(this::disconnectClient);
-        this.clients.clear();
 
         this.connectionManager.shutdown();
         this.messageManager.shutdown();
