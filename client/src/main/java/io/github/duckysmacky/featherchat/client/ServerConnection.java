@@ -32,7 +32,7 @@ public class ServerConnection implements Closeable {
                     }
                 }
             }
-        });
+        }, "Server message Listener");
 
         this.incomingMessageListener.start();
     }

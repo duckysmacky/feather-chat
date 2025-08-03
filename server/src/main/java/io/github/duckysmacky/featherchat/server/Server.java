@@ -8,14 +8,10 @@ import io.github.duckysmacky.featherchat.common.MessageType;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Server {
@@ -33,17 +29,17 @@ public class Server {
     public Server() {
         this.clients = new Hashtable<>();
         this.messagePool = new LinkedBlockingQueue<>();
-        this.connectionManager = Executors.newSingleThreadExecutor();
+        this.connectionManager = Executors.newFixedThreadPool(10);
         this.messageManager = Executors.newFixedThreadPool(10);
         this.isRunning = new AtomicBoolean();
 
         this.consoleInputListener = new Thread(new ConsoleInputListener(
             isRunning::get,
             input -> messagePool.add(Message.textMessage(SERVER_ID, input)),
-            () -> new Thread(this::stop, "Server Stopper").start()
-        ), "Console Input Listener");
+            () -> new Thread(this::stop, "Server stopper").start()
+        ), "Console input Listener");
 
-        this.messagePoolListener = new Thread(new MessageListener(isRunning::get, messagePool, this::handleMessage), "Message Pool Listener");
+        this.messagePoolListener = new Thread(new MessageListener(isRunning::get, messagePool, this::handleMessage), "Message pool Listener");
 
         this.connectionListener = new Thread(() -> {
             System.out.printf("Server is now listening on port %s%n", serverSocket.getLocalPort());
@@ -79,8 +75,14 @@ public class Server {
         connectionManager.submit(() -> {
             try {
                 ClientConnection client = new ClientConnection(clientSocket, messagePool);
-
                 clients.put(client.getId(), client);
+
+                try {
+                    client.sendMessage(Message.connectMessage(SERVER_ID));
+                } catch (IOException e) {
+                    System.err.printf("Unable to send CONNECT message to client '%s': %s%n", client.getId(), e.getMessage());
+                }
+
                 System.out.printf("New client connected: %s%n", client.getId());
             } catch (IOException e) {
                 System.err.printf("Unable to connect the client: %s%n", e.getMessage());
@@ -90,37 +92,41 @@ public class Server {
 
     private void disconnectClient(ClientConnection client) {
         connectionManager.submit(() -> {
-            ClientConnection disconnectedClient = clients.remove(client.getId());
+            ClientConnection connectedClient = clients.remove(client.getId());
+            if (connectedClient == null) return;
 
-            if (disconnectedClient != null) {
-                System.out.printf("Disconnecting from client '%s'...%n", disconnectedClient.getId());
-                disconnectedClient.close();
-                System.out.printf("Successfully disconnected from client '%s'%n", disconnectedClient.getId());
-            }
+            System.out.printf("Disconnecting from client '%s'...%n", connectedClient.getId());
+
+            try {
+                connectedClient.sendMessage(Message.disconnectMessage(SERVER_ID));
+            } catch (IOException _) {}
+
+            connectedClient.close();
+            System.out.printf("Successfully disconnected from client '%s'%n", connectedClient.getId());
         });
     }
 
     private void handleMessage(Message message) {
-        if (message.getType() == MessageType.DISCONNECT && !message.getSenderId().equals(SERVER_ID)) {
-            System.out.printf("Client '%s' requested disconnection%n", message.getSenderId());
+        switch (message.getType()) {
+            case TEXT -> clients.values().forEach(client -> messageManager.submit(() -> {
+                if (client.getId().equals(message.getSenderId())) return;
 
-            ClientConnection client = clients.get(message.getSenderId());
-            if (client != null)
-                disconnectClient(client);
-
-            return;
-        }
-
-        clients.values().forEach(client -> messageManager.submit(() -> {
-            if (!client.getId().equals(message.getSenderId())) {
                 try {
                     client.sendMessage(message);
                 } catch (IOException e) {
-                    System.err.printf("Unable to send a message to client '%s': %s%n", client.getId(), e.getMessage());
+                    System.err.printf("Unable to send a TEXT message to client '%s': %s%n", client.getId(), e.getMessage());
                     disconnectClient(client);
                 }
+            }));
+            case DISCONNECT -> {
+                if (message.getSenderId().equals(SERVER_ID)) break;
+                System.out.printf("Client '%s' requested disconnection%n", message.getSenderId());
+
+                ClientConnection client = clients.get(message.getSenderId());
+                if (client != null)
+                    disconnectClient(client);
             }
-        }));
+        }
 
         System.out.println(message);
     }

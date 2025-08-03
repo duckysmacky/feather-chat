@@ -35,6 +35,7 @@ public class ClientConnection implements Closeable {
 
                 if (message.getType() == MessageType.CONNECT) {
                     this.id = message.getSenderId();
+                    messagePool.add(message);
                     break;
                 }
             }
@@ -62,7 +63,7 @@ public class ClientConnection implements Closeable {
                     }
                 }
             }
-        }, String.format("Client '%s' Message Listener", id));
+        }, String.format("Client '%s' message Listener", id));
 
         this.messageListener.start();
     }

@@ -14,7 +14,6 @@ public class Client {
     private final UUID id;
     private final BlockingQueue<Message> incomingMessagePool;
     private final BlockingQueue<Message> outgoingMessagePool;
-    private final ExecutorService messageHandler;
     private final AtomicBoolean isConnected;
     private final Thread consoleInputListener;
     private final Thread incomingMessageListener;
@@ -25,17 +24,16 @@ public class Client {
         this.id = UUID.randomUUID();
         this.incomingMessagePool = new LinkedBlockingQueue<>();
         this.outgoingMessagePool = new LinkedBlockingQueue<>();
-        this.messageHandler = Executors.newSingleThreadExecutor();
         this.isConnected = new AtomicBoolean();
 
         this.consoleInputListener = new Thread(new ConsoleInputListener(
             isConnected::get,
             input -> outgoingMessagePool.add(Message.textMessage(id, input)),
-            () -> new Thread(this::disconnect).start()
-        ));
+            this::disconnect
+        ), "Console input Listener");
 
-        this.incomingMessageListener = new Thread(new MessageListener(isConnected::get, incomingMessagePool, this::handleIncomingMessage));
-        this.outgoingMessageListener = new Thread(new MessageListener(isConnected::get, outgoingMessagePool, this::handleOutgoingMessage));
+        this.incomingMessageListener = new Thread(new MessageListener(isConnected::get, incomingMessagePool, this::handleIncomingMessage), "Incoming message Listener");
+        this.outgoingMessageListener = new Thread(new MessageListener(isConnected::get, outgoingMessagePool, this::handleOutgoingMessage), "Outgoing message Listener");
     }
 
     public static void main(String[] args) {
@@ -58,24 +56,22 @@ public class Client {
     }
 
     private void handleIncomingMessage(Message message) {
-        messageHandler.submit(() -> {
-            if (message.getType() == MessageType.TEXT)
-                System.out.println(message);
-        });
+        switch (message.getType()) {
+            case TEXT -> System.out.println(message);
+            case DISCONNECT -> disconnect();
+        }
     }
 
     private void handleOutgoingMessage(Message message) {
-        messageHandler.submit(() -> {
-            if (!isConnected.get()) return;
+        if (!isConnected.get()) return;
 
-            try {
-                server.sendMessage(message);
-            } catch (IOException e) {
-                System.err.printf("Unable to send a message to server: %s%n", e.getMessage());
-            }
+        try {
+            server.sendMessage(message);
+        } catch (IOException e) {
+            System.err.printf("Unable to send a message to server: %s%n", e.getMessage());
+        }
 
-            System.out.println(message);
-        });
+        System.out.println(message);
     }
 
     public void connect(String host, int port) throws IOException {
@@ -96,31 +92,29 @@ public class Client {
     }
 
     public void disconnect() {
-        System.out.println("Disconnecting from server...");
+        new Thread(() -> {
+            System.out.println("Disconnecting from server...");
 
-        try {
-            Message disconnectionMessage = Message.disconnectMessage(id);
-            server.sendMessage(disconnectionMessage);
-        } catch (IOException e) {
-            System.err.printf("Unable to send DISCONNECT message to server: %s%n", e.getMessage());
-        }
+            try {
+                server.sendMessage(Message.disconnectMessage(id));
+            } catch (IOException _) {}
 
-        this.server.close();
+            this.server.close();
 
-        this.isConnected.set(false);
-        this.incomingMessageListener.interrupt();
-        this.outgoingMessageListener.interrupt();
+            this.isConnected.set(false);
+            this.consoleInputListener.interrupt();
+            this.incomingMessageListener.interrupt();
+            this.outgoingMessageListener.interrupt();
 
-        try {
-            this.consoleInputListener.join();
-            this.incomingMessageListener.join();
-            this.outgoingMessageListener.join();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+            try {
+                this.consoleInputListener.join();
+                this.incomingMessageListener.join();
+                this.outgoingMessageListener.join();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
 
-        this.messageHandler.shutdown();
-
-        System.out.println("Successfully disconnected from server");
+            System.out.println("Successfully disconnected from server");
+        }, "Server disconnector").start();
     }
 }
