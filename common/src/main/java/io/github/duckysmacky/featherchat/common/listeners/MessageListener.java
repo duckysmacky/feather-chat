@@ -1,4 +1,6 @@
-package io.github.duckysmacky.featherchat.common;
+package io.github.duckysmacky.featherchat.common.listeners;
+
+import io.github.duckysmacky.featherchat.common.request.Message;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.function.BooleanSupplier;

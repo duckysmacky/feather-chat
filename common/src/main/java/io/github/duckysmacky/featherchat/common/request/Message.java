@@ -1,4 +1,6 @@
-package io.github.duckysmacky.featherchat.common;
+package io.github.duckysmacky.featherchat.common.request;
+
+import io.github.duckysmacky.featherchat.common.exceptions.InvalidPayloadException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;

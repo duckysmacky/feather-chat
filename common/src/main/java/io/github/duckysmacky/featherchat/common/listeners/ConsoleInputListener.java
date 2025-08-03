@@ -1,4 +1,4 @@
-package io.github.duckysmacky.featherchat.common;
+package io.github.duckysmacky.featherchat.common.listeners;
 
 import java.util.Scanner;
 import java.util.function.BooleanSupplier;

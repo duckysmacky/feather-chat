@@ -1,7 +1,7 @@
 package io.github.duckysmacky.featherchat.server;
 
-import io.github.duckysmacky.featherchat.common.Message;
-import io.github.duckysmacky.featherchat.common.MessageType;
+import io.github.duckysmacky.featherchat.common.request.Message;
+import io.github.duckysmacky.featherchat.common.request.MessageType;
 
 import java.io.*;
 import java.net.Socket;

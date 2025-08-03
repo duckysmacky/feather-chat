@@ -1,9 +1,8 @@
 package io.github.duckysmacky.featherchat.client;
 
-import io.github.duckysmacky.featherchat.common.ConsoleInputListener;
-import io.github.duckysmacky.featherchat.common.Message;
-import io.github.duckysmacky.featherchat.common.MessageListener;
-import io.github.duckysmacky.featherchat.common.MessageType;
+import io.github.duckysmacky.featherchat.common.listeners.ConsoleInputListener;
+import io.github.duckysmacky.featherchat.common.request.Message;
+import io.github.duckysmacky.featherchat.common.listeners.MessageListener;
 
 import java.io.IOException;
 import java.util.UUID;

@@ -1,4 +1,6 @@
-package io.github.duckysmacky.featherchat.common;
+package io.github.duckysmacky.featherchat.common.request;
+
+import io.github.duckysmacky.featherchat.common.exceptions.InvalidPayloadException;
 
 public enum MessageType {
     /// A simple text message
