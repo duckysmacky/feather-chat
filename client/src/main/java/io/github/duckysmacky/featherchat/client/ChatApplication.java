@@ -1,5 +1,6 @@
 package io.github.duckysmacky.featherchat.client;
 
+import io.github.duckysmacky.featherchat.common.request.Message;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -18,15 +19,40 @@ public class ChatApplication extends Application {
     private final String serverAddress = "127.0.0.1";
     private final int serverPort = 8080;
     private Client client;
+    private ServerConnection serverConnection;
+    private MessageHandler messageHandler;
     private VBox messagesBox;
 
     public static void main(String[] args) {
         launch(args);
     }
+    private Scene getScene() {
+        ScrollPane scrollPane = new ScrollPane(messagesBox);
+        scrollPane.setFitToWidth(true);
 
-    public void appendMessageBox(String message) {
+        TextField inputField = new TextField();
+        inputField.setPromptText("Write a message...");
+
+        Button sendButton = new Button("Send");
+        sendButton.setOnAction(_ -> {
+            String messageContent = inputField.getText().trim();
+            if (!messageContent.isEmpty()) {
+                messageHandler.handleOutgoingMessage(Message.textMessage(client.getId(), messageContent));
+                inputField.clear();
+            }
+        });
+
+        HBox inputArea = new HBox(5, inputField, sendButton);
+        inputArea.setPrefHeight(40);
+
+        VBox root = new VBox(5, scrollPane, inputArea);
+        return new Scene(root, 500, 500);
+    }
+
+
+    public void appendMessageBox(String messageContent) {
         Platform.runLater(() -> {
-            Label messageLabel = new Label(message);
+            Label messageLabel = new Label(messageContent);
             messageLabel.setWrapText(true);
             messagesBox.getChildren().add(messageLabel);
         });
@@ -39,17 +65,17 @@ public class ChatApplication extends Application {
         messagesBox = new VBox(5);
         messagesBox.setPrefHeight(400);
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                client.connect(serverAddress, serverPort);
-            } catch (IOException e) {
-                appendMessageBox("Unable to connect to the server: " + e.getMessage());
-            }
-        });
+        try {
+            serverConnection = client.connect(serverAddress, serverPort);
+            messageHandler = new MessageHandler(serverConnection, this);
+        } catch (IOException e) {
+            appendMessageBox("Unable to connect to the server: " + e.getMessage());
+        }
 
         primaryStage.setTitle("FeatherChat Client");
         primaryStage.setOnCloseRequest(_ -> {
-            client.disconnect();
+            serverConnection.close();
+            messageHandler.stop();
             Platform.exit();
             System.exit(0);
         });
@@ -58,30 +84,6 @@ public class ChatApplication extends Application {
 
         primaryStage.setScene(scene);
         primaryStage.show();
-    }
-
-    private Scene getScene() {
-        ScrollPane scrollPane = new ScrollPane(messagesBox);
-        scrollPane.setFitToWidth(true);
-
-        TextField inputField = new TextField();
-        inputField.setPromptText("Write a message...");
-
-        Button sendButton = new Button("Send");
-        sendButton.setOnAction(_ -> {
-            String messageContent = inputField.getText().trim();
-            if (!messageContent.isEmpty()) {
-                appendMessageBox("You: " + messageContent);
-                inputField.clear();
-            }
-        });
-
-        HBox inputArea = new HBox(5, inputField, sendButton);
-        inputArea.setPrefHeight(40);
-
-        VBox root = new VBox(5, scrollPane, inputArea);
-        Scene scene = new Scene(root, 500, 500);
-        return scene;
     }
 
 }

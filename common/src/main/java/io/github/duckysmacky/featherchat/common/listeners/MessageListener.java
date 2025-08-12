@@ -3,6 +3,7 @@ package io.github.duckysmacky.featherchat.common.listeners;
 import io.github.duckysmacky.featherchat.common.request.Message;
 
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -40,7 +41,7 @@ public class MessageListener implements Runnable {
                 Message message = messagePool.take();
 
                 if (runFlag.getAsBoolean())
-                    onMessageCallback.accept(message);
+                    CompletableFuture.runAsync(() -> onMessageCallback.accept(message));
             } catch (InterruptedException e) {
                 break;
             }
