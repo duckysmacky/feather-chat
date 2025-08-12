@@ -35,25 +35,6 @@ public class Client {
         this.outgoingMessageListener = new Thread(new MessageListener(isConnected::get, outgoingMessagePool, this::handleOutgoingMessage), "Outgoing message Listener");
     }
 
-    public static void main(String[] args) {
-        if (args.length < 2) {
-            System.err.println("Error: not enough arguments provided");
-            System.err.println("Usage: client <host> <port>");
-            return;
-        }
-
-        String serverAddress = args[0];
-        int serverPort = Integer.parseInt(args[1]);
-
-        Client client = new Client();
-
-        try {
-            client.connect(serverAddress, serverPort);
-        } catch (IOException e) {
-            System.err.printf("Unable to connect to the server: %s%n", e.getMessage());
-        }
-    }
-
     private void handleIncomingMessage(Message message) {
         switch (message.getType()) {
             case TEXT -> System.out.println(message);
