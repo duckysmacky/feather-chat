@@ -14,7 +14,7 @@ import javafx.stage.Stage;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
-public class ClientApplication extends Application {
+public class ChatApplication extends Application {
     private final String serverAddress = "127.0.0.1";
     private final int serverPort = 8080;
     private Client client;
@@ -24,9 +24,9 @@ public class ClientApplication extends Application {
         launch(args);
     }
 
-    private void appendMessage(String content) {
+    public void appendMessageBox(String message) {
         Platform.runLater(() -> {
-            Label messageLabel = new Label(content);
+            Label messageLabel = new Label(message);
             messageLabel.setWrapText(true);
             messagesBox.getChildren().add(messageLabel);
         });
@@ -34,48 +34,54 @@ public class ClientApplication extends Application {
 
     @Override
     public void start(Stage primaryStage) {
+        client = new Client();
+
         messagesBox = new VBox(5);
         messagesBox.setPrefHeight(400);
 
+        CompletableFuture.runAsync(() -> {
+            try {
+                client.connect(serverAddress, serverPort);
+            } catch (IOException e) {
+                appendMessageBox("Unable to connect to the server: " + e.getMessage());
+            }
+        });
+
+        primaryStage.setTitle("FeatherChat Client");
+        primaryStage.setOnCloseRequest(_ -> {
+            client.disconnect();
+            Platform.exit();
+            System.exit(0);
+        });
+
+        Scene scene = getScene();
+
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+    private Scene getScene() {
         ScrollPane scrollPane = new ScrollPane(messagesBox);
         scrollPane.setFitToWidth(true);
 
         TextField inputField = new TextField();
         inputField.setPromptText("Write a message...");
+
         Button sendButton = new Button("Send");
+        sendButton.setOnAction(_ -> {
+            String messageContent = inputField.getText().trim();
+            if (!messageContent.isEmpty()) {
+                appendMessageBox("You: " + messageContent);
+                inputField.clear();
+            }
+        });
 
         HBox inputArea = new HBox(5, inputField, sendButton);
         inputArea.setPrefHeight(40);
 
         VBox root = new VBox(5, scrollPane, inputArea);
         Scene scene = new Scene(root, 500, 500);
-
-        sendButton.setOnAction(_ -> {
-            String messageContent = inputField.getText().trim();
-            if (!messageContent.isEmpty()) {
-                appendMessage("You: " + messageContent);
-                inputField.clear();
-            }
-        });
-
-        CompletableFuture.runAsync(() -> {
-            client = new Client();
-
-            try {
-                client.connect(serverAddress, serverPort);
-            } catch (IOException e) {
-                appendMessage("Unable to connect to the server: " + e.getMessage());
-            }
-        });
-
-        primaryStage.setTitle("FeatherChat Client");
-        primaryStage.setScene(scene);
-        primaryStage.setOnCloseRequest(_ -> {
-            client.disconnect();
-            Platform.exit();
-            System.exit(0);
-        });
-        primaryStage.show();
+        return scene;
     }
 
 }
