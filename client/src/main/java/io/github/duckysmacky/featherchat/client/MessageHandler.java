@@ -29,9 +29,8 @@ public class MessageHandler {
                 } catch (IOException e) {
                     String msg = e.getMessage();
                     if (msg != null) {
-                        if (msg.strip().equalsIgnoreCase("socket closed")) break;
-
-                        System.err.printf("Unable to read a message from server: %s%n", msg);
+                        application.displayError(String.format("Unable to read a message from server: %s%n", msg));
+                        break;
                     }
                 }
             }
@@ -41,9 +40,9 @@ public class MessageHandler {
 
     public void handleIncomingMessage(Message message) {
         switch (message.getType()) {
-            case TEXT -> application.appendMessageBox(message.toString());
+            case TEXT -> application.displayMessage(message);
             case DISCONNECT -> {
-                application.appendMessageBox("Server has disconnected you.");
+                application.displayInfo("Server has disconnected you.");
                 serverConnection.close();
                 stop();
             }
@@ -56,9 +55,9 @@ public class MessageHandler {
         messageSender.submit(() -> {
             try {
                 serverConnection.writeMessage(message);
-                application.appendMessageBox(message.toString());
+                application.displayMessage(message);
             } catch (IOException e) {
-                System.err.printf("Unable to send message to server: %s%n", e.getMessage());
+                application.displayError(String.format("Unable to send message to server: %s%n", e.getMessage()));
             }
         });
     }
@@ -70,7 +69,7 @@ public class MessageHandler {
         try {
             serverMessageReceiver.join();
         } catch (InterruptedException e) {
-            System.err.printf("Error while waiting for server message listener to stop: %s%n", e.getMessage());
+            application.displayError(String.format("Error while stopping message handler: %s%n", e.getMessage()));
         }
 
         messageSender.shutdown();
